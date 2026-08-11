@@ -163,23 +163,60 @@ def nota_neta_pooled(df_resp, cols):
     return round((n45 - n12) / len(flat) * 100, 2)
 
 
+def render_metodologia():
+    with st.expander("ℹ️ ¿Cómo se calcula este resultado? (haz clic para ver el detalle)", expanded=False):
+        st.markdown("""
+El Barómetro 2026 tiene **22 preguntas** de escala, agrupadas en **5 dimensiones**, cada una
+con un peso distinto según su impacto en el desempeño del equipo:
+
+| Dimensión | Peso |
+|---|---|
+| Liderazgo y dirección | 30% |
+| Gestión del desempeño y desarrollo | 25% |
+| Funcionamiento del equipo | 20% |
+| Clima y seguridad psicológica | 20% |
+| Recursos | 5% |
+
+**Escala de respuesta (1 a 5):**
+1 → Nunca/Casi nunca &nbsp;·&nbsp; 2 → Rara vez/Casi Nunca &nbsp;·&nbsp; 3 → A veces &nbsp;·&nbsp;
+4 → Casi siempre &nbsp;·&nbsp; 5 → Siempre
+
+**Cómo se calcula el resultado de cada dimensión** (no es un promedio simple de notas):
+
+> Resultado por dimensión = (Respuestas con Nota 4 + Nota 5 − Respuestas con Nota 1 + Nota 2) / Total de respuestas
+
+Es decir, se mide el **balance neto entre respuestas positivas y negativas** — parecido a cómo
+funciona un Net Promoter Score. Por eso, si algunas personas responden muy negativamente, el
+resultado baja más de lo que bajaría un simple porcentaje de conformidad: una respuesta muy mala
+no solo "no suma", sino que **resta** activamente al resultado.
+
+**Resultado final:**
+
+> Resultado Ponderado = Σ (Resultado de cada dimensión × su peso)
+
+Con muestras pequeñas (pocas respuestas), una sola respuesta atípica puede mover tu resultado
+varios puntos — por eso siempre se muestra cuántas respuestas recibiste.
+        """)
+
+
 def render_individual_view(lider_nombre, av, resp_lider, coment_lider):
-    """Vista individual: solo el resultado de un líder, sin acceso al resto."""
+    """Vista individual: solo el resultado de un líder, sin acceso al resto. No incluye E-NPS
+    (ese indicador solo se muestra en el panel general, por decisión explícita)."""
     st.title(f"Barómetro 2026 — {lider_nombre.title()}")
     st.caption(f"Servicio: {av.get('Servicio', '-')}  ·  Resultado individual, solo visible para ti")
+
+    render_metodologia()
 
     dotacion = av.get("Dotación", "-")
     n_resp = av.get("Respuestas", "-")
     pct_part = av.get("% Participación", "-")
     resultado = av.get("Resultado Ponderado (%)", 0)
-    enps = av.get("E-NPS", "-")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Dotación", dotacion)
     c2.metric("Respuestas", n_resp)
     c3.metric("% Participación", f"{pct_part}%" if pct_part != "-" else "-")
     c4.metric("Resultado Ponderado", f"{resultado}%")
-    c5.metric("E-NPS", int(enps) if enps != "-" else "-")
 
     if isinstance(n_resp, (int, float)) and n_resp < 8:
         st.warning(f"⚠️ Tu resultado se basa en solo {int(n_resp)} respuestas — con muestras pequeñas, "
