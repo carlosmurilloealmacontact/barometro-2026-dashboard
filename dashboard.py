@@ -137,6 +137,118 @@ def top_temas(sub_df, n=12):
     return contador.most_common(n)
 
 
+def columnas_preguntas_ordenadas(df_resp):
+    """Columnas reales de las 20 preguntas, en orden, dentro de respuestas del formulario."""
+    cols = []
+    for preg in PREGUNTAS_FULL:
+        candidatos = [c for c in df_resp.columns if c.startswith("Preguntas") and preg[:40] in c]
+        cols.append(candidatos[0] if candidatos else None)
+    return cols
+
+
+def nota_neta_pooled(df_resp, cols):
+    """Calcula (Nota4+Nota5-Nota1-Nota2)/Total agrupando TODAS las respuestas
+    de las columnas dadas (igual metodología que la hoja de cálculo de referencia:
+    no promedia por líder, pondera cada respuesta individual por igual)."""
+    cols = [c for c in cols if c is not None]
+    if not cols:
+        return 0.0
+    vals = df_resp[cols].apply(lambda s: s.map(ESCALA))
+    flat = vals.to_numpy().ravel()
+    flat = flat[~pd.isna(flat)]
+    if len(flat) == 0:
+        return 0.0
+    n45 = (flat >= 4).sum()
+    n12 = (flat <= 2).sum()
+    return round((n45 - n12) / len(flat) * 100, 2)
+
+
+def render_individual_view(lider_nombre, av, resp_lider, coment_lider):
+    """Vista individual: solo el resultado de un líder, sin acceso al resto."""
+    st.title(f"Barómetro 2026 — {lider_nombre.title()}")
+    st.caption(f"Servicio: {av.get('Servicio', '-')}  ·  Resultado individual, solo visible para ti")
+
+    dotacion = av.get("Dotación", "-")
+    n_resp = av.get("Respuestas", "-")
+    pct_part = av.get("% Participación", "-")
+    resultado = av.get("Resultado Ponderado (%)", 0)
+    enps = av.get("E-NPS", "-")
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Dotación", dotacion)
+    c2.metric("Respuestas", n_resp)
+    c3.metric("% Participación", f"{pct_part}%" if pct_part != "-" else "-")
+    c4.metric("Resultado Ponderado", f"{resultado}%")
+    c5.metric("E-NPS", int(enps) if enps != "-" else "-")
+
+    if isinstance(n_resp, (int, float)) and n_resp < 8:
+        st.warning(f"⚠️ Tu resultado se basa en solo {int(n_resp)} respuestas — con muestras pequeñas, "
+                   "una sola respuesta puede mover el resultado varios puntos. Interprétalo con cautela.")
+
+    st.markdown("---")
+    st.subheader("Resultado por dimensión")
+    dim_cols = ["Liderazgo y dirección (30%)", "Gestión del desempeño y desarrollo (25%)",
+                "Funcionamiento del equipo (20%)", "Clima y seguridad psicológica (20%)", "Recursos (5%)"]
+    dim_vals = [av.get(c, 0) for c in dim_cols]
+    fig_dim = go.Figure(go.Bar(
+        x=dim_vals, y=dim_cols, orientation="h",
+        marker_color=[heat_color(v) for v in dim_vals],
+        text=[f"{v}%" for v in dim_vals], textposition="outside",
+    ))
+    fig_dim.update_layout(xaxis_range=[0, 100], height=300, margin=dict(l=10, r=10, t=10, b=10),
+                           plot_bgcolor="white", paper_bgcolor="white", font=dict(color="#2A2A2A"))
+    st.plotly_chart(fig_dim, use_container_width=True)
+
+    if resp_lider.empty:
+        st.info("Aún no hay respuestas individuales registradas para calcular el detalle por pregunta.")
+    else:
+        st.subheader("Nota Neta por pregunta")
+        preg_cols = columnas_preguntas_ordenadas(resp_lider)
+        notas = [nota_neta(resp_lider[c]) if c else 0.0 for c in preg_cols]
+        notas_df = pd.DataFrame({"Pregunta": [f"P{i+1}" for i in range(20)], "Nota Neta": notas,
+                                  "Texto": PREGUNTAS_FULL})
+        fig_q = px.bar(notas_df, x="Pregunta", y="Nota Neta", color_discrete_sequence=[C_ACENTO], text="Nota Neta")
+        fig_q.update_traces(texttemplate="%{text}%", textposition="outside")
+        fig_q.update_layout(yaxis_range=[min(0, notas_df["Nota Neta"].min() - 10), 100],
+                             height=380, plot_bgcolor="white", paper_bgcolor="white",
+                             margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig_q, use_container_width=True)
+
+        top3 = notas_df.nlargest(3, "Nota Neta")
+        bot3 = notas_df.nsmallest(3, "Nota Neta")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown("**Top 3 — Mayor puntuación**")
+            for _, row in top3.iterrows():
+                st.markdown(f"🟢 **{row['Pregunta']}** ({row['Nota Neta']}%) — {row['Texto']}")
+        with col_b:
+            st.markdown("**Bottom 3 — Menor puntuación**")
+            for _, row in bot3.iterrows():
+                st.markdown(f"🟠 **{row['Pregunta']}** ({row['Nota Neta']}%) — {row['Texto']}")
+
+    st.markdown("---")
+    st.subheader("Comentarios de tu equipo")
+    if coment_lider is None or coment_lider.empty:
+        st.info("No hay comentarios registrados.")
+    else:
+        preguntas_abiertas = [("¿Qué prácticas deberían mantenerse?", "mantener"),
+                               ("¿Qué cambiarías?", "cambiar"), ("Comentario adicional", "adicional")]
+        tabs = st.tabs([t[0] for t in preguntas_abiertas])
+        iconos = {"Positivo": "🟢", "Neutro": "⚪", "Negativo": "🔴", "Sin contenido": "⚫"}
+        for tab, (_, key) in zip(tabs, preguntas_abiertas):
+            with tab:
+                sub = coment_lider[coment_lider["pregunta"] == key]
+                if sub.empty:
+                    st.info("Sin comentarios en esta pregunta.")
+                    continue
+                for _, row in sub.iterrows():
+                    icono = iconos.get(row["sentimiento"], "⚪")
+                    st.markdown(f"{icono} {row['texto']}")
+
+    st.markdown("---")
+    st.caption("Este link es personal — no lo compartas. Si crees que algún dato está mal, contacta a Recursos Humanos.")
+
+
 def render_heatmap_table(df_tabla, col_resultado):
     """Tabla HTML propia (evita el bug de pandas Styler + st.dataframe)."""
     rows_html = []
@@ -202,9 +314,6 @@ def check_password():
     return False
 
 
-if not check_password():
-    st.stop()
-
 st.markdown(f"""
 <style>
     .stApp {{ background-color: #F2F2F2; }}
@@ -220,6 +329,50 @@ st.markdown(f"""
     }}
 </style>
 """, unsafe_allow_html=True)
+
+TOKENS_JSON = os.path.join(os.path.dirname(__file__), "data", "tokens.json")
+
+
+def load_tokens():
+    if not os.path.exists(TOKENS_JSON):
+        return {}
+    with open(TOKENS_JSON, encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ── Modo individual: si la URL trae ?t=TOKEN, mostramos solo el resultado de ese líder ──
+token = st.query_params.get("t")
+if token:
+    tokens_map = load_tokens()
+    lider_token = tokens_map.get(token)
+    if not lider_token:
+        st.error("🔒 Link no válido o vencido. Verifica el enlace o pide uno nuevo a Recursos Humanos.")
+        st.stop()
+
+    with st.spinner("Cargando tu resultado..."):
+        avance_all = load_avance()
+        respuestas_all = load_respuestas()
+        comentarios_all = load_comentarios_clasificados()
+
+    fila = avance_all[avance_all["Líder"].str.strip().str.upper() == lider_token.strip().upper()]
+    if fila.empty:
+        st.error("No se encontró tu resultado en la hoja de cálculo. Contacta a Recursos Humanos.")
+        st.stop()
+    av = fila.iloc[0]
+
+    resp_lider = respuestas_all[
+        respuestas_all["Elige tu líder"].str.strip().str.upper() == lider_token.strip().upper()
+    ]
+    coment_lider = comentarios_all[
+        comentarios_all["lider"].str.strip().str.upper() == lider_token.strip().upper()
+    ] if not comentarios_all.empty else comentarios_all
+
+    render_individual_view(lider_token, av, resp_lider, coment_lider)
+    st.stop()
+
+# ── Modo administrador: panel general con contraseña ──
+if not check_password():
+    st.stop()
 
 with st.spinner("Cargando datos del Barómetro..."):
     avance = load_avance()
@@ -257,28 +410,7 @@ if df.empty:
 lideres_filtrados = set(df["Líder"].str.strip().str.upper())
 resp_df = respuestas[respuestas["Elige tu líder"].str.strip().str.upper().isin(lideres_filtrados)]
 
-# Columnas reales de las 20 preguntas, en orden, dentro de respuestas del formulario
-preg_cols_ordenadas = []
-for preg in PREGUNTAS_FULL:
-    candidatos = [c for c in resp_df.columns if c.startswith("Preguntas") and preg[:40] in c]
-    preg_cols_ordenadas.append(candidatos[0] if candidatos else None)
-
-
-def nota_neta_pooled(df_resp, cols):
-    """Calcula (Nota4+Nota5-Nota1-Nota2)/Total agrupando TODAS las respuestas
-    de las columnas dadas (igual metodología que la hoja de cálculo de referencia:
-    no promedia por líder, pondera cada respuesta individual por igual)."""
-    cols = [c for c in cols if c is not None]
-    if not cols:
-        return 0.0
-    vals = df_resp[cols].apply(lambda s: s.map(ESCALA))
-    flat = vals.to_numpy().ravel()
-    flat = flat[~pd.isna(flat)]
-    if len(flat) == 0:
-        return 0.0
-    n45 = (flat >= 4).sum()
-    n12 = (flat <= 2).sum()
-    return round((n45 - n12) / len(flat) * 100, 2)
+preg_cols_ordenadas = columnas_preguntas_ordenadas(resp_df)
 
 
 # ── KPIs principales ──
