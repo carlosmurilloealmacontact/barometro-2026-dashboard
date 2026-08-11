@@ -283,7 +283,7 @@ def render_individual_view(lider_nombre, av, resp_lider, coment_lider):
                     st.markdown(f"{icono} {row['texto']}")
 
     st.markdown("---")
-    st.caption("Este link es personal — no lo compartas. Si crees que algún dato está mal, contacta a Recursos Humanos.")
+    st.caption("Este link es personal — no lo compartas. Si crees que algún dato está mal, contacta a Carlos Murillo o Maka Restrepo.")
 
 
 def render_heatmap_table(df_tabla, col_resultado):
@@ -383,7 +383,7 @@ if token:
     tokens_map = load_tokens()
     lider_token = tokens_map.get(token)
     if not lider_token:
-        st.error("🔒 Link no válido o vencido. Verifica el enlace o pide uno nuevo a Recursos Humanos.")
+        st.error("🔒 Link no válido o vencido. Verifica el enlace o pide uno nuevo a Carlos Murillo o Maka Restrepo.")
         st.stop()
 
     with st.spinner("Cargando tu resultado..."):
@@ -393,7 +393,7 @@ if token:
 
     fila = avance_all[avance_all["Líder"].str.strip().str.upper() == lider_token.strip().upper()]
     if fila.empty:
-        st.error("No se encontró tu resultado en la hoja de cálculo. Contacta a Recursos Humanos.")
+        st.error("No se encontró tu resultado en la hoja de cálculo. Contacta a Carlos Murillo o Maka Restrepo.")
         st.stop()
     av = fila.iloc[0]
 
