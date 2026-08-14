@@ -418,15 +418,31 @@ with st.spinner("Cargando datos del Barómetro..."):
 st.title("Barómetro 2026 | AMX LATAM")
 st.caption("Resultados Generales — conectado en vivo al formulario")
 
-# ── Filtros ──
+def _prune_session_selection(key, valid_options):
+    """Antes de crear el widget, descarta del session_state las opciones que
+    ya no son válidas (evita el error de Streamlit si options cambia y la
+    selección previa queda 'huérfana')."""
+    if key in st.session_state:
+        st.session_state[key] = [v for v in st.session_state[key] if v in valid_options]
+
+
+# ── Filtros (en cascada: cada uno acota las opciones de los siguientes) ──
 with st.sidebar:
     st.header("Filtros")
+
     servicios = sorted(avance["Servicio"].dropna().unique())
-    servicio_sel = st.multiselect("Servicio", servicios, default=[])
-    coordinadores = sorted(avance["Coordinador"].dropna().unique())
-    coord_sel = st.multiselect("Coordinador", coordinadores, default=[])
-    lideres_opts = sorted(avance["Líder"].dropna().unique())
-    lider_sel = st.multiselect("Líder", lideres_opts, default=[])
+    servicio_sel = st.multiselect("Servicio", servicios, key="filtro_servicio")
+
+    tras_servicio = avance[avance["Servicio"].isin(servicio_sel)] if servicio_sel else avance
+    coordinadores = sorted(tras_servicio["Coordinador"].dropna().unique())
+    _prune_session_selection("filtro_coordinador", coordinadores)
+    coord_sel = st.multiselect("Coordinador", coordinadores, key="filtro_coordinador")
+
+    tras_coord = tras_servicio[tras_servicio["Coordinador"].isin(coord_sel)] if coord_sel else tras_servicio
+    lideres_opts = sorted(tras_coord["Líder"].dropna().unique())
+    _prune_session_selection("filtro_lider", lideres_opts)
+    lider_sel = st.multiselect("Líder", lideres_opts, key="filtro_lider")
+
     st.divider()
     if st.button("🔄 Recargar datos"):
         st.cache_data.clear()
