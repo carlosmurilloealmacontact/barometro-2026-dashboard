@@ -240,16 +240,25 @@ def render_individual_view(lider_nombre, av, resp_lider, coment_lider):
         st.info("Aún no hay respuestas individuales registradas para calcular el detalle por pregunta.")
     else:
         st.subheader("Nota Neta por pregunta")
+        st.caption("Pasa el mouse sobre cada barra para ver el texto completo de la pregunta.")
         preg_cols = columnas_preguntas_ordenadas(resp_lider)
         notas = [nota_neta(resp_lider[c]) if c else 0.0 for c in preg_cols]
         notas_df = pd.DataFrame({"Pregunta": [f"P{i+1}" for i in range(20)], "Nota Neta": notas,
                                   "Texto": PREGUNTAS_FULL})
-        fig_q = px.bar(notas_df, x="Pregunta", y="Nota Neta", color_discrete_sequence=[C_ACENTO], text="Nota Neta")
-        fig_q.update_traces(texttemplate="%{text}%", textposition="outside")
+        fig_q = px.bar(notas_df, x="Pregunta", y="Nota Neta", color_discrete_sequence=[C_ACENTO], text="Nota Neta",
+                        custom_data=["Texto"])
+        fig_q.update_traces(
+            texttemplate="%{text}%", textposition="outside",
+            hovertemplate="<b>%{x}</b>: %{customdata[0]}<br>Nota Neta: %{y}%<extra></extra>",
+        )
         fig_q.update_layout(yaxis_range=[min(0, notas_df["Nota Neta"].min() - 10), 100],
                              height=380, plot_bgcolor="white", paper_bgcolor="white",
                              margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig_q, use_container_width=True)
+
+        with st.expander("📋 Ver el texto completo de las 20 preguntas"):
+            for _, row in notas_df.iterrows():
+                st.markdown(f"**{row['Pregunta']}** ({row['Nota Neta']}%) — {row['Texto']}")
 
         top3 = notas_df.nlargest(3, "Nota Neta")
         bot3 = notas_df.nsmallest(3, "Nota Neta")
