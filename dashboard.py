@@ -516,6 +516,7 @@ col_a, col_b = st.columns(2)
 
 with col_a:
     st.subheader("Nota Neta por Pregunta")
+    st.caption("Pasa el mouse sobre cada barra para ver el texto completo de la pregunta.")
     notas = []
     for i, preg in enumerate(PREGUNTAS_FULL):
         col_name = [c for c in resp_df.columns if c.startswith("Preguntas") and preg[:40] in c]
@@ -524,12 +525,19 @@ with col_a:
         notas.append({"Pregunta": f"P{i+1}", "Nota Neta": nn, "Texto": preg})
     notas_df = pd.DataFrame(notas)
     fig_q = px.bar(notas_df, x="Pregunta", y="Nota Neta", color_discrete_sequence=[C_ACENTO],
-                    text="Nota Neta")
-    fig_q.update_traces(texttemplate="%{text}%", textposition="outside")
+                    text="Nota Neta", custom_data=["Texto"])
+    fig_q.update_traces(
+        texttemplate="%{text}%", textposition="outside",
+        hovertemplate="<b>%{x}</b>: %{customdata[0]}<br>Nota Neta: %{y}%<extra></extra>",
+    )
     fig_q.update_layout(yaxis_range=[min(0, notas_df["Nota Neta"].min() - 10), 100],
                          height=380, plot_bgcolor="white", paper_bgcolor="white",
                          margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig_q, use_container_width=True)
+
+    with st.expander("📋 Ver el texto completo de las 20 preguntas"):
+        for _, row in notas_df.iterrows():
+            st.markdown(f"**{row['Pregunta']}** ({row['Nota Neta']}%) — {row['Texto']}")
 
 with col_b:
     st.subheader("Top y Bottom Preguntas")
