@@ -6,6 +6,7 @@ Conectado en vivo al Google Sheet. Ejecutar:
 import io
 import json
 import os
+import time
 import urllib.request
 import urllib.parse
 from collections import Counter
@@ -69,12 +70,17 @@ COMENTARIOS_JSON = os.path.join(os.path.dirname(__file__), "data", "comentarios_
 
 
 def gsheet_csv(sheet_name):
+    """Descarga una hoja como CSV. Se agrega un parámetro de cache-busting porque
+    el endpoint gviz de Google a veces sirve una instantánea vieja/truncada desde
+    su propio CDN (visto en producción: devolvió solo 49 de 573 filas). El '_'
+    no lo usa Google para nada, solo evita que reutilice una respuesta cacheada."""
     url = (f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq"
-           f"?tqx=out:csv&sheet={urllib.parse.quote(sheet_name)}")
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
+           f"?tqx=out:csv&sheet={urllib.parse.quote(sheet_name)}&_={int(time.time())}")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
         raw = resp.read()
-    return pd.read_csv(io.BytesIO(raw))
+    df = pd.read_csv(io.BytesIO(raw))
+    return df
 
 
 @st.cache_data(ttl=300)
@@ -94,7 +100,14 @@ def load_avance():
 
 @st.cache_data(ttl=300)
 def load_respuestas():
-    return gsheet_csv("Respuestas de formulario 1")
+    df = gsheet_csv("Respuestas de formulario 1")
+    # Salvaguarda: si Google sirve una instantánea vieja/truncada del CDN, esto se
+    # nota porque cae muy por debajo del histórico conocido (500+). Reintentamos
+    # una vez con un pequeño delay antes de resignarnos a los datos parciales.
+    if len(df) < 200:
+        time.sleep(1.5)
+        df = gsheet_csv("Respuestas de formulario 1")
+    return df
 
 
 def nota_neta(series):
